@@ -39,7 +39,7 @@ impl From<Field> for u64 {
 /// A comment under a post.
 #[non_nullable_options]
 #[skip_serializing_none]
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentInfo {
     /// Resource version. See [versioning](#Versioning) for details.

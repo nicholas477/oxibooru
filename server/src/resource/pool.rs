@@ -20,7 +20,7 @@ use strum::EnumString;
 use utoipa::ToSchema;
 
 /// A pool resource stripped down to `id`, `names`, `category`, `description` and `postCount` fields.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MicroPool {
     /// Resource version. See [versioning](#Versioning).
@@ -36,7 +36,7 @@ pub struct MicroPool {
     pub post_count: i64,
 }
 
-#[derive(Clone, Copy, EnumString)]
+#[derive(Clone, Copy, EnumString, Debug)]
 #[strum(serialize_all = "camelCase")]
 pub enum Field {
     Version,

@@ -17,6 +17,7 @@ use axum::response::{IntoResponse, Response};
 use mime::{APPLICATION, FORM_DATA, JSON, MULTIPART};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt::{self, Debug};
 use std::num::NonZeroU64;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -68,6 +69,12 @@ where
 impl<T: Serialize> IntoResponse for Json<T> {
     fn into_response(self) -> Response {
         AxumJson(self.0).into_response()
+    }
+}
+
+impl<T: Debug> Debug for Json<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Json").field("value", &self.0).finish()
     }
 }
 

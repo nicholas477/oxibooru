@@ -34,7 +34,7 @@ use std::sync::Arc;
 use strum::EnumString;
 use utoipa::ToSchema;
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
 pub struct Note {
     #[serde(skip)]
     id: i64,
@@ -75,7 +75,7 @@ impl Note {
 }
 
 /// A post resource stripped down to `id` and `thumbnailUrl` fields.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MicroPost {
     /// The post identifier.
@@ -133,7 +133,7 @@ impl From<Field> for u64 {
 /// One file together with its metadata posted to the site.
 #[non_nullable_options]
 #[skip_serializing_none]
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PostInfo {
     /// Resource version. See [versioning](#Versioning).

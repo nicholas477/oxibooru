@@ -17,7 +17,7 @@ use strum::EnumString;
 use utoipa::ToSchema;
 
 /// A tag resource stripped down to `names`, `category` and `usages` fields.
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, ToSchema, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct MicroTag {
     /// A list of tag names (aliases). Tagging a post with any name will automatically assign the first name from this list.
