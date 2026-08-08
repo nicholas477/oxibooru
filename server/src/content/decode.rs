@@ -11,7 +11,7 @@ use image::codecs::{gif::GifDecoder, webp::WebPDecoder};
 use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, RgbImage, RgbaImage};
 use std::borrow::Cow;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::mpsc::{RecvTimeoutError, SyncSender};
@@ -37,7 +37,7 @@ pub fn representative_image(config: &Config, file_path: &Path, mime_type: MimeTy
         MimeType::Mov | MimeType::Mp4 | MimeType::Webm => {
             ffmpeg_frame(config, file_path, PostType::Video).and_then(|frame| frame.ok_or(ApiError::EmptyVideo))
         }
-        MimeType::Pdf => pdf_representative_image(file_path),
+        MimeType::Pdf => pdf_representative_image(config, file_path),
     }
 }
 
