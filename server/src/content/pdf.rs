@@ -1,65 +1,83 @@
 use crate::api::error::{ApiError, ApiResult};
 use crate::config::Config;
+use crate::content;
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
-use hayro::{RenderCache, RenderSettings, render};
+use hayro::hayro_syntax::page::Page;
+use hayro::vello_cpu::color::palette::css::WHITE;
+use hayro::vello_cpu::color::{AlphaColor, PremulRgba8, Srgb};
+use hayro::{RenderCache, RenderSettings};
+use image::error::LimitErrorKind;
 use image::{DynamicImage, RgbaImage};
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
-use vello_cpu::color::palette::css::WHITE;
 
 pub fn pdf_preview_image(config: &Config, file_path: &Path) -> ApiResult<DynamicImage> {
-    let mut file = Vec::new();
-    File::open(file_path)?
-        .read_to_end(&mut file)
-        .map_err(|_| ApiError::FromStr("Failed to render PDF".into()))?;
+    let pdf = {
+        let file_contents = content::map_read_result(std::fs::read(file_path))?;
+        Pdf::new(file_contents)
+    }?;
+    let page = pdf.pages().first().ok_or(ApiError::EmptyPdf)?; // The preview image will be the first page
 
-    let pdf = Pdf::new(file).map_err(|_| ApiError::FromStr("Failed to render PDF".into()))?;
+    let dimensions = PdfRenderDimensions::from_page(config, page)?;
+    let pixmap =
+        hayro::render(page, &RenderCache::new(), &InterpreterSettings::default(), &dimensions.render_settings(WHITE));
 
-    let interpreter_settings = InterpreterSettings { ..Default::default() };
+    let width = u32::from(pixmap.width());
+    let height = u32::from(pixmap.height());
 
-    let page = pdf
-        .pages()
-        .first()
-        .ok_or(ApiError::FromStr("Failed to get page 1 from PDF".into()))?;
+    // NOTE: Using the premultipied RGBA8 pixels here for the image buffer is only correct because the
+    //       the background color is opaque. If this changes, `take_unpremultiplied` should be used instead.
+    let rgba_buffer = into_bytes(pixmap.take());
+    let buffer_size = rgba_buffer.len();
+    RgbaImage::from_raw(width, height, rgba_buffer)
+        .ok_or(ApiError::FrameBufferMismatch(width, height, buffer_size))
+        .map(DynamicImage::ImageRgba8)
+}
 
-    let (dimensions, ratio) = {
-        let dimensions = page.render_dimensions();
+struct PdfRenderDimensions {
+    pub width: u16,  // Width (in pixels) of the rendered PDF page.
+    pub height: u16, // Height (in pixels) of the rendered PDF page.
+    pub scale: f32,  // Scale applied to the original PDF page dimensions to fit within width/height.
+}
 
-        let max_size = (f32::from(config.limits.max_pdf_width), f32::from(config.limits.max_pdf_height));
+impl PdfRenderDimensions {
+    /// Calculates the dimensions to render a PDF page at, given the config limits and the page's original dimensions.
+    fn from_page(config: &Config, page: &Page<'_>) -> ApiResult<Self> {
+        let (width, height) = page.render_dimensions();
 
-        let ratios = (max_size.0 / dimensions.0, max_size.1 / dimensions.1);
+        // Find the min ratio to scale down the image while maintaining aspect ratio
+        let scale = {
+            let max_width = f32::from(config.limits.max_pdf_width);
+            let max_height = f32::from(config.limits.max_pdf_height);
+            f32::min(max_width / width, max_height / height)
+        };
+        let scale = f32::min(1.0, scale); // Ensure scale is at most 1.0. We only want to downscale, not upscale.
 
-        // find the min ratio to scale down the image while maintaining aspect ratio
-        let ratio = f32::min(ratios.0, ratios.1);
+        let width = num_traits::cast(width * scale).ok_or(LimitErrorKind::DimensionError)?;
+        let height = num_traits::cast(height * scale).ok_or(LimitErrorKind::DimensionError)?;
+        Ok(Self { width, height, scale })
+    }
 
-        // ensure ratio is at most 1.0. We only want to downscale, not upscale.
-        let ratio = f32::min(1.0, ratio);
+    /// Returns the render settings for rendering a PDF page at the dimensions specified by this struct.
+    fn render_settings(&self, background_color: AlphaColor<Srgb>) -> RenderSettings {
+        RenderSettings {
+            x_scale: self.scale,
+            y_scale: self.scale,
+            width: Some(self.width),
+            height: Some(self.height),
+            bg_color: background_color,
+        }
+    }
+}
 
-        ((dimensions.0 * ratio, dimensions.1 * ratio), ratio)
-    };
+/// Converts a `Vec<PremulRgba8>` to `Vec<u8>` without copying.
+fn into_bytes(rgba_buffer: Vec<PremulRgba8>) -> Vec<u8> {
+    const _: () = assert!(size_of::<PremulRgba8>() == 4 * size_of::<u8>(), "PremulRgba8 must be 4 bytes");
+    const _: () = assert!(align_of::<PremulRgba8>() == align_of::<u8>(), "PremulRgba8 must have same alignment as u8");
+    const _: () = assert!(!std::mem::needs_drop::<PremulRgba8>(), "PremulRgba8 must be trivially destructible");
 
-    let dimensions: (u16, u16) = (
-        num_traits::cast(dimensions.0).ok_or(ApiError::FromStr("Failed to render PDF".into()))?,
-        num_traits::cast(dimensions.1).ok_or(ApiError::FromStr("Failed to render PDF".into()))?,
-    );
-
-    let render_settings = RenderSettings {
-        x_scale: ratio,
-        y_scale: ratio,
-        width: Some(dimensions.0),
-        height: Some(dimensions.1),
-        bg_color: WHITE,
-    };
-    let cache = RenderCache::new();
-
-    let pixmap = render(page, &cache, &interpreter_settings, &render_settings);
-
-    let png = pixmap.data_as_u8_slice();
-
-    Ok(DynamicImage::ImageRgba8(
-        RgbaImage::from_raw(u32::from(pixmap.width()), u32::from(pixmap.height()), png.to_vec())
-            .ok_or(ApiError::FromStr("Failed to render PDF".into()))?,
-    ))
+    let (ptr, len, capacity) = rgba_buffer.into_raw_parts();
+    // SAFETY: PremulRgba8 is repr(C), size 4, align 1, and has no padding,
+    //         so the transmuted buffer is safe to read and deallocate.
+    unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), 4 * len, 4 * capacity) }
 }
