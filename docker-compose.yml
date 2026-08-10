@@ -4,14 +4,14 @@
 # orchestration services
 services:
   server:
-    image: oxibooru/server:latest
+    # image: oxibooru/server:latest
     build:
       context: server
       args: 
         # Setting this to `native` can give small performance gains for some 
         # operations such as reverse search, but makes binary less portable.
         # Leave blank to let Rust determine the target architecture. 
-        TARGET_CPU:
+        TARGET_CPU: native
     depends_on:
       - sql
     environment:
@@ -27,14 +27,16 @@ services:
       - "${MOUNT_DATA}:/data"
       - "./server/config.toml:/opt/app/config.toml:ro"
     stop_signal: SIGINT
+    ports:
+      - "6666:6666"
 
   client:
-    image: oxibooru/client:latest
+    # image: oxibooru/client:latest
     build: client
     depends_on:
       - server
     environment:
-      BACKEND_HOST: server
+      BACKEND_HOST: 10.0.1.9
       BASE_URL:
     volumes:
       - "${MOUNT_DATA}:/data:ro"
@@ -51,4 +53,4 @@ services:
     volumes:
       - "${MOUNT_SQL}:/var/lib/postgresql/data"
     ports:
-    - "127.0.0.1:${POSTGRES_PORT}:5432"
+      - "5435:5432"
